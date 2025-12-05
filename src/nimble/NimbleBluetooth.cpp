@@ -941,9 +941,18 @@ void NimbleBluetooth::startAdvertising()
     }
 #else
     NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
+
+    NimBLEAdvertisementData *advData = new NimBLEAdvertisementData();
+    advData->setPreferredParams(24,40);
+
     pAdvertising->reset();
     pAdvertising->addServiceUUID(MESH_SERVICE_UUID);
     pAdvertising->addServiceUUID(NimBLEUUID((uint16_t)0x180f)); // 0x180F is the Battery Service
+
+    pAdvertising->setMinInterval(688);
+    pAdvertising->setMaxInterval(688);
+
+
     pAdvertising->start(0);
 #endif
 }
