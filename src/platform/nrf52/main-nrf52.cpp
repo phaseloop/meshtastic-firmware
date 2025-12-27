@@ -35,9 +35,12 @@
 #define SAFE_VDD_VOLTAGE_THRESHOLD 2.7
 #endif
 
-#ifndef SAFE_VDD_VOLTAGE_THRESHOLD_HIST
-#define SAFE_VDD_VOLTAGE_THRESHOLD_HOST 0.2
+// hysteresis value
+#ifndef SAFE_VDD_VOLTAGE_THRESHOLD_HYST
+#define SAFE_VDD_VOLTAGE_THRESHOLD_HYST 0.2
 #endif
+
+uint16_t getVDDVoltage();
 
 // Weak empty variant initialization function.
 // May be redefined by variant files.
@@ -68,11 +71,24 @@ bool powerHAL_isVBUSConnected()
 bool powerHAL_isPowerLevelSafe()
 {
 
-    uint16_t threshhold = SAFE_VDD_VOLTAGE_THRESHOLD * 1000; // convert V to mV
+    static bool powerLevelSafe = true;
 
+    uint16_t threshold = SAFE_VDD_VOLTAGE_THRESHOLD * 1000; // convert V to mV
+    uint16_t hysteresis = SAFE_VDD_VOLTAGE_THRESHOLD_HYST * 1000;
 
+    if(powerLevelSafe){
+        if(getVDDVoltage() < threshold){
+        powerLevelSafe = false;
+        }
+    } else {
+        // power level is only safe again when it raises above threshold + hystheresis
+        if(getVDDVoltage() >= (threshold + hysteresis)){
+            powerLevelSafe = true;
+        }
 
-    return true;
+    }
+
+    return powerLevelSafe;
 }
 
 void powerHAL_platformInit()
@@ -250,10 +266,12 @@ extern "C" void lfs_assert(const char *reason)
     // (regardless if enabled or disabled) - as there is no live SoftDevice stack
     // implement "safe" functions detecting softdevice stack state and using proper method to set registers
 
-    // do not set GPREGRET if POFWARN is triggered because it means lfs_assert reports flash undervoltage protection
-    // and not data corruption. Reboot is fine as boot procedure will wait until power level is safe again
+    // Do not set GPREGRET if POFWARN is triggered because it means lfs_assert reports flash undervoltage protection
+    // and not data corruption. Reboot is fine as boot procedure will wait until power level is safe again.
+    // POFWARN seems to be cleared by SoftDevice after event is emitted so this have chance do nothing
+    // but even extra chance of not getting data unnecessarily deleted is better than nothing.
 
-    if (powerHAL_isPowerLevelSafe()) {
+    if (!NRF_POWER->POFWARN) {
         if (!(sd_power_gpregret_clr(0, 0xFF) == NRF_SUCCESS &&
               sd_power_gpregret_set(0, NRF52_MAGIC_LFS_IS_CORRUPT) == NRF_SUCCESS)) {
             NRF_POWER->GPREGRET = NRF52_MAGIC_LFS_IS_CORRUPT;
@@ -300,8 +318,6 @@ void nrf52Loop()
 
     checkSDEvents();
     reportLittleFSCorruptionOnce();
-    LOG_INFO("VDD_VOLTAGE: %f", getVDDVoltage());
-
 }
 
 #ifdef USE_SEMIHOSTING
